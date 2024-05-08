@@ -1,6 +1,8 @@
 import numpy as np
 import transformations
 
+from geometry_msgs.msg import PoseStamped, Pose
+
 
 def T2sevendof(T):
     translation_vector = T[:3, 3]

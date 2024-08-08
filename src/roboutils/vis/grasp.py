@@ -199,7 +199,6 @@ def get_gripper_keypoints(grasps, z_direction=True, scale=1):
 def draw_scene(
         pc=None,
         grasps=None,
-        z_direction=False,
         scale=1,
         other_geometry=None,
         gripper_control_points=None,

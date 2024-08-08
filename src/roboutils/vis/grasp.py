@@ -220,7 +220,6 @@ def draw_scene(
     Args:
         save_dir: provide absolute path to save figure instead of visualizing on the GUI
     """
-<<<<<<< HEAD
     grasps = np.array(grasps).copy()
     if z_direction:
         for i in range(len(grasps)):
@@ -229,13 +228,6 @@ def draw_scene(
     if scale != 1:
         pc = pc * scale
         grasps[:, :3, 3] = grasps[:, :3, 3] * scale
-=======
-    if z_direction:
-        grasps = np.array(grasps).copy()
-        for i in range(len(grasps)):
-            grasps[i] = update_pose(grasps[i], rotate=-np.pi / 2, rotate_axis='y')
-            grasps[i] = update_pose(grasps[i], rotate=np.pi / 2, rotate_axis='x')
->>>>>>> cc591f77094ffa6600aaa3bd23945f66c5076828
 
     if gripper_control_points is None:
         gripper_control_points = get_gripper_control_points()

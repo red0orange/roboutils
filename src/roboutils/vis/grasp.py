@@ -343,10 +343,9 @@ def draw_scene(
         for geom in other_geometry:
             vis.add_geometry(geom)
 
-    opt = vis.get_render_option()
-    opt.point_size = 10.0
-
     if save_dir is None:
+        opt = vis.get_render_option()
+        opt.point_size = 10.0
         vis.run()
 
     if save_dir is not None:

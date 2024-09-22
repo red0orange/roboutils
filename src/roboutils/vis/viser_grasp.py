@@ -12,12 +12,19 @@ class ViserForGrasp(object):
     def __init__(self):
         self.server = viser.ViserServer()
         self.gui_reset_scene = self.server.gui.add_button("Reset Scene")
+        self.gui_break_flag = self.server.gui.add_button("Break Flag")
 
         self.reset_flag = False
+        self.break_flag = False
         @self.gui_reset_scene.on_click
-        def _(_) -> None:
+        def _reset(_) -> None:
             """Reset the scene when the reset button is clicked."""
             self.reset_flag = True
+            pass
+        @self.gui_break_flag.on_click
+        def _break(_) -> None:
+            """Reset the scene when the reset button is clicked."""
+            self.break_flag = True
             pass
 
         self.pc_index = 0
@@ -27,11 +34,18 @@ class ViserForGrasp(object):
         pass
 
     def wait_for_reset(self):
-        while not self.reset_flag:
+        while (not self.reset_flag) and (not self.break_flag) :
             time.sleep(0.1)
         self.server.scene.reset()
-        self.reset_flag = False
-        pass
+
+        if self.reset_flag:
+            self.reset_flag = False
+            self.break_flag = False
+            return False
+        elif self.break_flag:
+            self.reset_flag = False
+            self.break_flag = False
+            return True
 
     def add_mesh(self, mesh, name=None):
         if name is None:

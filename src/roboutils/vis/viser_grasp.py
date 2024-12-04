@@ -121,6 +121,59 @@ class ViserForGrasp(object):
         return_cross_point[1] += (image_ori_height // 2)
         image_handle.remove_click_callback()
         return return_cross_point
+    
+    def interact_select_image(self, images):
+        assert len(images) > 0
+        return_index = None
+
+        self.next_button_handle = self.server.gui.add_button("Next One")
+        self.break_button_handle = self.server.gui.add_button("This One")
+
+        # 设置视角
+        self.server.scene.set_up_direction("+x")
+        @self.server.on_client_connect
+        def _(client: viser.ClientHandle) -> None:
+            # Set up the camera -- this gives a nice view of the full mesh.
+            client.camera.position = np.array([0.0, 0.0, -150.0])
+            client.camera.wxyz = np.array([0.0, 0.0, 0.0, 1.0])
+            camera_handle = client.camera
+            pass
+
+        # 初始化
+        cur_index = 0
+        cur_image = images[cur_index]
+        cur_image_handle = self.add_image(cur_image, name="selected_image")
+
+        @self.next_button_handle.on_click
+        def _next_one(_) -> None:
+            nonlocal cur_index
+            nonlocal cur_image
+            nonlocal cur_image_handle
+            if cur_index >= len(images) - 1:
+                cur_index = 0
+            else:
+                cur_index += 1
+            cur_image_handle.remove()
+            cur_image = images[cur_index]
+            cur_image_handle = self.add_image(cur_image, name="selected_image")
+        
+        break_flag = False
+        @self.break_button_handle.on_click
+        def _this_one(_) -> None:
+            nonlocal return_index
+            nonlocal cur_index
+            nonlocal break_flag
+            print("This one")
+            return_index = cur_index
+            break_flag = True
+
+        print("Waiting for select image...")
+        while break_flag == False:
+            time.sleep(0.1)
+
+        self.next_button_handle.remove()
+        self.break_button_handle.remove()
+        return return_index
 
     def wait_for_reset(self):
         print("Waiting for reset...")

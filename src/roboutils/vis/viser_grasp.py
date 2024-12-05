@@ -124,6 +124,7 @@ class ViserForGrasp(object):
     
     def interact_select_image(self, images):
         assert len(images) > 0
+        images = [cv2.flip(image, -1) for image in images]
         return_index = None
 
         self.next_button_handle = self.server.gui.add_button("Next One")
@@ -173,6 +174,7 @@ class ViserForGrasp(object):
 
         self.next_button_handle.remove()
         self.break_button_handle.remove()
+        cur_image_handle.remove()
         return return_index
 
     def wait_for_reset(self):

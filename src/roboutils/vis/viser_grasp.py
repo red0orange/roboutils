@@ -27,33 +27,164 @@ def ray_intersection_with_xy_plane(origin, direction):
 class ViserForGrasp(object):
     def __init__(self):
         self.server = viser.ViserServer()
-        self.gui_reset_scene = self.server.gui.add_button("Reset Scene")
-        self.gui_break_flag = self.server.gui.add_button("Break Flag")
 
-        self.reset_flag = False
-        self.break_flag = False
-        @self.gui_reset_scene.on_click
-        def _reset(_) -> None:
-            """Reset the scene when the reset button is clicked."""
-            self.reset_flag = True
-            pass
-        @self.gui_break_flag.on_click
-        def _break(_) -> None:
-            """Reset the scene when the reset button is clicked."""
-            self.break_flag = True
-            pass
+        self.pc_index = 0
+        self.mesh_index = 0
+        self.coord_index = 0
+        self.grasp_index = 0
 
-        self.gui_render_diffusion_steps = self.server.gui.add_button("Render Grasp Diffusion Steps")
-        self.diffusion_steps_data = None
-        self.results_images = None
-        @self.gui_render_diffusion_steps.on_click
+        self.show_text_handle = self.server.gui.add_markdown(content="")
+
+        self.clients = []
+        self.clients_camera_handle = []
+        self.camera_pose_update_func = []
+        self.camera_dict = {}
+        @self.server.on_client_connect
+        def connect_handler(client: viser.ClientHandle) -> None:
+            self.clients.append(client)
+            self.clients_camera_handle.append(client.camera)
+
+            # 当先设置场景，再连接的时候，正常设置视角
+            self.set_client_camera_view(self.camera_dict)
+
+            # # 为了手动选择视角，添加监听事件
+            # @self.camera_handle.on_update
+            # def update_handler(camera_handle) -> None:
+            #     print("position: {}".format(camera_handle.position))
+            #     print("wxyz: {}".format(camera_handle.wxyz))
+            #     print("look at: {}".format(camera_handle.look_at))
+            #     print("up: {}".format(camera_handle.up_direction))
+            #     pass
+            # self.camera_pose_update_func.append(update_handler) # 防止被销毁
+        self.on_client_connect_func = connect_handler  # 防止被销毁
+        pass
+
+    def set_client_camera_view(self, camera_dict):
+        self.camera_dict = camera_dict
+        if len(self.clients) == 0:
+            # 等待连接后自动设置视角
+            return False
+        for camera_key, camera_value in self.camera_dict.items():
+            # 给每个客户端都更新视角
+            for client_handle, camera_handle in zip(self.clients, self.clients_camera_handle):
+                if camera_key == "position":
+                    camera_handle.position = camera_value
+                elif camera_key == "wxyz":
+                    camera_handle.wxyz = camera_value
+                elif camera_key == "look_at":
+                    camera_handle.look_at(camera_value)
+                elif camera_key == "up_direction":
+                    camera_handle.up_direction = camera_value
+        return True
+    
+    def set_image_visual_view(self):
+        # 展示设置固定视角
+        self.server.scene.set_up_direction("+x")
+        camera_dict = {
+            "position": np.array([0.0, 0.0, -180]),
+            "wxyz": np.array([0.0, 0.0, 0.0, 1.0]),
+        }
+        self.set_client_camera_view(camera_dict)
+        pass
+
+    def set_grasp_visual_view(self):
+        # 展示设置固定视角
+        # @TODO
+        self.server.scene.set_up_direction("+y")
+        camera_dict = {
+            "position": np.array([-0.24913841, 0.02283902, 0.52435203]),
+            "wxyz": np.array([0.3728618, -0.5706226, 0.61251547, -0.40023585]),
+            "up_direction": np.array([0.0, 0.0, 1.0]),
+        }
+        self.set_client_camera_view(camera_dict)
+        pass
+
+    def reset_scene(self):
+        self.server.scene.reset()
+        pass
+
+    def update_show_text(self, text):
+        self.show_text_handle.content = text
+        pass
+
+    def wait_for_button_click(self, button_name):
+        button_handle = self.server.gui.add_button(button_name)
+
+        clicked_flag = False
+        @button_handle.on_click
+        def _button_click(event):
+            nonlocal clicked_flag
+            clicked_flag = True
+        
+        while clicked_flag == False:
+            time.sleep(0.1)
+        
+        button_handle.remove()
+        return True
+
+    def wait_for_button_group_click(self, button_group_name, options):
+        assert len(options) > 0
+
+        # @note button_group 有点问题，不灵敏，而且显示不全
+        # button_group_handle = self.server.gui.add_button_group(button_group_name, options)
+        # return_option = None
+        # @button_group_handle.on_click
+        # def _button_group_click(event):
+        #     nonlocal return_option
+        #     option = event.target.value
+        #     return_option = option
+        # while return_option is None:
+        #     time.sleep(0.1)
+        # button_group_handle.remove()
+
+        # 添加说明
+        markdown_handle = self.server.gui.add_markdown(content="### {}".format(button_group_name))
+
+        button_handles_dict = {}
+        clicked_option = None
+
+        # 为每个按钮添加监听事件
+        def _button_click(option):
+            nonlocal clicked_option
+            clicked_option = option
+
+        for option in options:
+            button_handle = self.server.gui.add_button(option)
+            button_handles_dict[option] = button_handle
+            # 设置每个按钮的点击事件
+            button_handle.on_click(lambda event, option=option: _button_click(option))
+        
+        # 等待按钮点击
+        while clicked_option is None:
+            time.sleep(0.1)
+
+        # 移除所有按钮
+        markdown_handle.remove()
+        for button_handle in button_handles_dict.values():
+            button_handle.remove()
+
+        return clicked_option
+    
+    def wait_for_text_input(self, text_input_name):
+        text_input_handle = self.server.gui.add_text(label=text_input_name)
+        self.wait_for_button_click("确认输入")
+        return text_input_handle.value
+
+    def render_diffusion_steps(self, grasp_Ts, obj_xyz, z_direction=True):
+        gui_render_diffusion_steps = self.server.gui.add_button("Render Grasp Diffusion Steps")
+        diffusion_steps_data = None
+        results_images = None
+
+        finish_render_flag = False
+        @gui_render_diffusion_steps.on_click
         def _render_diffusion_steps(event: viser.GuiEvent) -> None:
+            nonlocal finish_render_flag
             if self.diffusion_steps_data is not None:
                 client = event.client
                 client.scene.reset()
 
-                time_grasp_Ts = self.diffusion_steps_data['grasp_Ts']
-                obj_xyz  = self.diffusion_steps_data['obj_xyz']
+                time_grasp_Ts = diffusion_steps_data['grasp_Ts']
+                obj_xyz  = diffusion_steps_data['obj_xyz']
                 images = []
                 for time_i in range(time_grasp_Ts.shape[0]):
                     grasp_Ts = time_grasp_Ts[time_i]
@@ -61,18 +192,19 @@ class ViserForGrasp(object):
                     time.sleep(0.03)
                     images.append(client.get_render(height=480, width=640, transport_format="jpeg"))
                     client.scene.reset()
-                self.results_images = images
+                results_images = images
+                finish_render_flag = True
                 # print("Render grasp diffusion steps to images")
                 # client.send_file_download(
                 #     "image.gif", iio.imwrite("<bytes>", images, extension="gif", loop=0)
                 # )
                 # print("Render grasp diffusion steps to image.gif")
+        
+        while finish_render_flag == False:
+            time.sleep(0.1)
 
-        self.pc_index = 0
-        self.mesh_index = 0
-        self.coord_index = 0
-        self.grasp_index = 0
-        pass
+        gui_render_diffusion_steps.remove()
+        return results_images
 
     def interact_image(self, image, name="image"):
         image = cv2.flip(image, -1)
@@ -81,14 +213,7 @@ class ViserForGrasp(object):
         image_handle = self.add_image(image, name)
 
         # 设置视角
-        self.server.scene.set_up_direction("+x")
-        @self.server.on_client_connect
-        def _(client: viser.ClientHandle) -> None:
-            # Set up the camera -- this gives a nice view of the full mesh.
-            client.camera.position = np.array([0.0, 0.0, -120.0])
-            client.camera.wxyz = np.array([0.0, 0.0, 0.0, 1.0])
-            camera_handle = client.camera
-            pass
+        self.set_image_visual_view()
 
         # 点击事件
         self.tmp_return_cross_point = None
@@ -112,14 +237,18 @@ class ViserForGrasp(object):
 
             self.tmp_return_cross_point = np.array(x_y_cross_point)
         
-        self.wait_for_reset()
+        option = self.wait_for_button_group_click("确认选择", ["确认选择", "取消选择"])
+        if option == "取消选择":
+            return_cross_point = None
+        else:
+            return_cross_point = self.tmp_return_cross_point
+            return_cross_point[0] = -return_cross_point[0]
+            return_cross_point[1] = -return_cross_point[1]
+            return_cross_point[0] += (image_ori_width // 2)
+            return_cross_point[1] += (image_ori_height // 2)
 
-        return_cross_point = self.tmp_return_cross_point
-        return_cross_point[0] = -return_cross_point[0]
-        return_cross_point[1] = -return_cross_point[1]
-        return_cross_point[0] += (image_ori_width // 2)
-        return_cross_point[1] += (image_ori_height // 2)
         image_handle.remove_click_callback()
+        self.server.scene.reset()
         return return_cross_point
     
     def interact_select_image(self, images):
@@ -127,25 +256,18 @@ class ViserForGrasp(object):
         images = [cv2.flip(image, -1) for image in images]
         return_index = None
 
-        self.next_button_handle = self.server.gui.add_button("Next One")
-        self.break_button_handle = self.server.gui.add_button("This One")
+        next_button_handle = self.server.gui.add_button("Next One")
+        break_button_handle = self.server.gui.add_button("This One")
 
         # 设置视角
-        self.server.scene.set_up_direction("+x")
-        @self.server.on_client_connect
-        def _(client: viser.ClientHandle) -> None:
-            # Set up the camera -- this gives a nice view of the full mesh.
-            client.camera.position = np.array([0.0, 0.0, -150.0])
-            client.camera.wxyz = np.array([0.0, 0.0, 0.0, 1.0])
-            camera_handle = client.camera
-            pass
+        self.set_image_visual_view()
 
         # 初始化
         cur_index = 0
         cur_image = images[cur_index]
         cur_image_handle = self.add_image(cur_image, name="selected_image")
 
-        @self.next_button_handle.on_click
+        @next_button_handle.on_click
         def _next_one(_) -> None:
             nonlocal cur_index
             nonlocal cur_image
@@ -159,7 +281,7 @@ class ViserForGrasp(object):
             cur_image_handle = self.add_image(cur_image, name="selected_image")
         
         break_flag = False
-        @self.break_button_handle.on_click
+        @break_button_handle.on_click
         def _this_one(_) -> None:
             nonlocal return_index
             nonlocal cur_index
@@ -172,25 +294,43 @@ class ViserForGrasp(object):
         while break_flag == False:
             time.sleep(0.1)
 
-        self.next_button_handle.remove()
-        self.break_button_handle.remove()
+        next_button_handle.remove()
+        break_button_handle.remove()
         cur_image_handle.remove()
+        self.server.scene.reset()
         return return_index
 
     def wait_for_reset(self):
-        print("Waiting for reset...")
-        while (not self.reset_flag) and (not self.break_flag) :
-            time.sleep(0.1)
-        self.server.scene.reset()
+        gui_reset_scene = self.server.gui.add_button("Reset Scene")
+        gui_break_flag = self.server.gui.add_button("Break Flag")
 
-        if self.reset_flag:
-            self.reset_flag = False
-            self.break_flag = False
-            return False
-        elif self.break_flag:
-            self.reset_flag = False
-            self.break_flag = False
+        reset_flag = False
+        break_flag = False
+        @gui_reset_scene.on_click
+        def _reset(_) -> None:
+            """Reset the scene when the reset button is clicked."""
+            nonlocal reset_flag
+            reset_flag = True
+            pass
+        @gui_break_flag.on_click
+        def _break(_) -> None:
+            """Reset the scene when the reset button is clicked."""
+            nonlocal break_flag
+            break_flag = True
+            pass
+
+        print("Waiting for reset...")
+        while (not reset_flag) and (not break_flag) :
+            time.sleep(0.1)
+
+        self.server.scene.reset()
+        gui_break_flag.remove()
+        gui_reset_scene.remove()
+
+        if break_flag:
             return True
+        else:
+            return False
 
     def add_mesh(self, mesh, name=None):
         if name is None:
@@ -201,12 +341,15 @@ class ViserForGrasp(object):
         self.server.scene.add_mesh_simple(name=name, vertices=mesh_vertices, faces=mesh_faces)
         pass
 
-    def add_pcd(self, points, colors=None, name=None, point_size=0.002):
+    def add_pcd(self, points, colors=None, name=None, point_size=0.001):
         if name is None:
             name = "pc_{}".format(self.pc_index)
             self.pc_index += 1
         if colors is None:
-            colors = np.zeros((points.shape[0], 3))
+            colors = np.zeros((points.shape[0], 3), dtype=np.float16)
+            colors[:, 0] = 0.3
+            colors[:, 1] = 0.3
+            colors[:, 2] = 0.3
 
         self.server.scene.add_point_cloud(name, points, colors=colors, point_size=point_size)
         pass
@@ -254,6 +397,8 @@ class ViserForGrasp(object):
         pass
 
     def vis_grasp_scene(self, grasp_Ts, pc=None, mesh=None, grasp_colors=None, max_grasp_num=50, z_direction=True):
+        self.set_grasp_visual_view()
+        
         if grasp_colors is None:
             grasp_colors = [None] * len(grasp_Ts)
         if pc is not None:
@@ -270,7 +415,7 @@ class ViserForGrasp(object):
         if name is None:
             name = "image"
         render_ratio = fix_width / image.shape[1]
-        render_height = int(image.shape[0] * render_ratio)
+        render_height = image.shape[0] * render_ratio
         image_handle = self.server.scene.add_image(name, image, render_width=fix_width, render_height=render_height)
         return image_handle
 

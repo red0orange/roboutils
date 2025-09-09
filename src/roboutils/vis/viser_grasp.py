@@ -25,8 +25,8 @@ def ray_intersection_with_xy_plane(origin, direction):
 
 
 class ViserForGrasp(object):
-    def __init__(self):
-        self.server = viser.ViserServer()
+    def __init__(self, port=8080):
+        self.server = viser.ViserServer(port=port)
 
         self.pc_index = 0
         self.mesh_index = 0
@@ -166,47 +166,27 @@ class ViserForGrasp(object):
         return clicked_option
     
     def wait_for_text_input(self, text_input_name):
-        text_input_handle = self.server.gui.add_text(label=text_input_name)
+        text_input_handle = self.server.gui.add_text(label=text_input_name, initial_value="")
         self.wait_for_button_click("确认输入")
-        return text_input_handle.value
+        value = text_input_handle.value
+        text_input_handle.remove()
+        return value
 
-    def render_diffusion_steps(self, grasp_Ts, obj_xyz, z_direction=True):
-        gui_render_diffusion_steps = self.server.gui.add_button("Render Grasp Diffusion Steps")
-        diffusion_steps_data = None
-        results_images = None
+    def show_image(self, image, name="image"):
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = cv2.flip(image, -1)
+        image_ori_width = image.shape[1]
+        image_ori_height = image.shape[0]
+        image_handle = self.add_image(image, name)
 
-        finish_render_flag = False
-        @gui_render_diffusion_steps.on_click
-        def _render_diffusion_steps(event: viser.GuiEvent) -> None:
-            nonlocal finish_render_flag
-            if self.diffusion_steps_data is not None:
-                client = event.client
-                client.scene.reset()
-
-                time_grasp_Ts = diffusion_steps_data['grasp_Ts']
-                obj_xyz  = diffusion_steps_data['obj_xyz']
-                images = []
-                for time_i in range(time_grasp_Ts.shape[0]):
-                    grasp_Ts = time_grasp_Ts[time_i]
-                    self.vis_grasp_scene(grasp_Ts, pc=obj_xyz, z_direction=True)
-                    time.sleep(0.03)
-                    images.append(client.get_render(height=480, width=640, transport_format="jpeg"))
-                    client.scene.reset()
-                results_images = images
-                finish_render_flag = True
-                # print("Render grasp diffusion steps to images")
-                # client.send_file_download(
-                #     "image.gif", iio.imwrite("<bytes>", images, extension="gif", loop=0)
-                # )
-                # print("Render grasp diffusion steps to image.gif")
-        
-        while finish_render_flag == False:
-            time.sleep(0.1)
-
-        gui_render_diffusion_steps.remove()
-        return results_images
+        # 设置视角
+        self.set_image_visual_view()
+        self.wait_for_button_click("Next")
+        self.server.scene.reset()
+        pass
 
     def interact_image(self, image, name="image"):
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image = cv2.flip(image, -1)
         image_ori_width = image.shape[1]
         image_ori_height = image.shape[0]
@@ -253,11 +233,13 @@ class ViserForGrasp(object):
     
     def interact_select_image(self, images):
         assert len(images) > 0
+        images = [cv2.cvtColor(image, cv2.COLOR_BGR2RGB) for image in images]
         images = [cv2.flip(image, -1) for image in images]
         return_index = None
 
         next_button_handle = self.server.gui.add_button("Next One")
         break_button_handle = self.server.gui.add_button("This One")
+        giveup_button_handle = self.server.gui.add_button("Give Up")
 
         # 设置视角
         self.set_image_visual_view()
@@ -289,6 +271,13 @@ class ViserForGrasp(object):
             print("This one")
             return_index = cur_index
             break_flag = True
+        
+        @giveup_button_handle.on_click
+        def _give_up(_) -> None:
+            nonlocal return_index
+            nonlocal break_flag
+            return_index = None
+            break_flag = True
 
         print("Waiting for select image...")
         while break_flag == False:
@@ -296,6 +285,7 @@ class ViserForGrasp(object):
 
         next_button_handle.remove()
         break_button_handle.remove()
+        giveup_button_handle.remove()
         cur_image_handle.remove()
         self.server.scene.reset()
         return return_index
@@ -332,13 +322,13 @@ class ViserForGrasp(object):
         else:
             return False
 
-    def add_mesh(self, mesh, name=None):
+    def add_mesh(self, mesh, name=None, color=(90, 200, 255)):
         if name is None:
             name = "mesh_{}".format(self.mesh_index)
             self.mesh_index += 1
         mesh_vertices = np.array(mesh.vertices)
         mesh_faces = np.array(mesh.triangles)
-        self.server.scene.add_mesh_simple(name=name, vertices=mesh_vertices, faces=mesh_faces)
+        self.server.scene.add_mesh_simple(name=name, vertices=mesh_vertices, faces=mesh_faces, color=color)
         pass
 
     def add_pcd(self, points, colors=None, name=None, point_size=0.001):
@@ -396,13 +386,14 @@ class ViserForGrasp(object):
             )
         pass
 
-    def vis_grasp_scene(self, grasp_Ts, pc=None, mesh=None, grasp_colors=None, max_grasp_num=50, z_direction=True):
-        self.set_grasp_visual_view()
+    def vis_grasp_scene(self, grasp_Ts, pc=None, mesh=None, grasp_colors=None, max_grasp_num=50, z_direction=True, pc_colors=None, set_view=True):
+        if set_view:
+            self.set_grasp_visual_view()
         
         if grasp_colors is None:
             grasp_colors = [None] * len(grasp_Ts)
         if pc is not None:
-            self.add_pcd(pc)
+            self.add_pcd(pc, colors=pc_colors)
         if mesh is not None:
             self.add_mesh(mesh)
         for grasp_i, grasp_T in enumerate(grasp_Ts):
@@ -419,12 +410,99 @@ class ViserForGrasp(object):
         image_handle = self.server.scene.add_image(name, image, render_width=fix_width, render_height=render_height)
         return image_handle
 
-    def set_grasp_diffusion_steps(self, time_grasp_Ts, obj_xyz):
-        self.diffusion_steps_data = {'grasp_Ts': time_grasp_Ts, 'obj_xyz': obj_xyz}
-        pass
+    def render_diffusion_steps(self, grasp_Ts, obj_xyz):
+        gui_render_diffusion_steps = self.server.gui.add_button("Render Grasp Diffusion Steps")
+        diffusion_steps_data = {
+            "grasp_Ts": grasp_Ts,
+            "obj_xyz": obj_xyz,
+        }
+        results_images = None
 
-    def get_grasp_diffusion_steps_images(self):
-        return self.results_images
+        finish_render_flag = False
+        @gui_render_diffusion_steps.on_click
+        def _render_diffusion_steps(event: viser.GuiEvent) -> None:
+            nonlocal finish_render_flag
+            nonlocal results_images
+            nonlocal diffusion_steps_data
+            if diffusion_steps_data is not None:
+                client = event.client
+                client.scene.reset()
+
+                time_grasp_Ts = diffusion_steps_data['grasp_Ts']
+                obj_xyz  = diffusion_steps_data['obj_xyz']
+                images = []
+                print(1)
+                for time_i in range(time_grasp_Ts.shape[0]):
+                    grasp_Ts = time_grasp_Ts[time_i]
+                    grasp_colors = [(210, 210, 210)] * len(grasp_Ts)
+                    print(grasp_Ts.shape)
+                    self.vis_grasp_scene(grasp_Ts, z_direction=True, set_view=False, grasp_colors=grasp_colors)
+                    obj_colors = [(90, 200, 255)] * len(obj_xyz)
+                    self.add_pcd(obj_xyz, colors=obj_colors)
+                    print(2)
+                    time.sleep(0.03)
+                    images.append(client.get_render(height=480, width=640, transport_format="jpeg"))
+                    client.scene.reset()
+                results_images = images
+                finish_render_flag = True
+                # print("Render grasp diffusion steps to images")
+                # client.send_file_download(
+                #     "image.gif", iio.imwrite("<bytes>", images, extension="gif", loop=0)
+                # )
+                # print("Render grasp diffusion steps to image.gif")
+        
+        while finish_render_flag == False:
+            time.sleep(0.1)
+
+        gui_render_diffusion_steps.remove()
+        return results_images
+
+    def render_hand_diffusion_steps(self, grasp_Ts, obj_xyz, hand_mesh, contact_center, palm_arrow_mesh):
+        gui_render_diffusion_steps = self.server.gui.add_button("Render Grasp Diffusion Steps")
+        diffusion_steps_data = {
+            "grasp_Ts": grasp_Ts,
+            "obj_xyz": obj_xyz,
+        }
+        results_images = None
+
+        finish_render_flag = False
+        @gui_render_diffusion_steps.on_click
+        def _render_diffusion_steps(event: viser.GuiEvent) -> None:
+            nonlocal finish_render_flag
+            nonlocal results_images
+            nonlocal diffusion_steps_data
+            if diffusion_steps_data is not None:
+                client = event.client
+                client.scene.reset()
+
+                time_grasp_Ts = diffusion_steps_data['grasp_Ts']
+                obj_xyz  = diffusion_steps_data['obj_xyz']
+                images = []
+                for time_i in range(time_grasp_Ts.shape[0]):
+                    grasp_Ts = time_grasp_Ts[time_i]
+                    grasp_colors = [(210, 210, 210)] * len(grasp_Ts)
+                    self.vis_grasp_scene(grasp_Ts, z_direction=True, set_view=False, grasp_colors=grasp_colors)
+                    obj_colors = [(90, 200, 255)] * len(obj_xyz)
+                    self.add_pcd(obj_xyz, colors=obj_colors)
+                    self.add_mesh(hand_mesh, color=(225, 184, 155), opacity=0.5)
+                    self.add_mesh(palm_arrow_mesh, color=(0, 126, 60), opacity=0.8)
+                    self.add_big_pcd([contact_center], colors=[(0, 126, 60)], point_size=0.01, opacity=0.8)
+                    time.sleep(0.03)
+                    images.append(client.get_render(height=480, width=640, transport_format="jpeg"))
+                    client.scene.reset()
+                results_images = images
+                finish_render_flag = True
+                # print("Render grasp diffusion steps to images")
+                # client.send_file_download(
+                #     "image.gif", iio.imwrite("<bytes>", images, extension="gif", loop=0)
+                # )
+                # print("Render grasp diffusion steps to image.gif")
+        
+        while finish_render_flag == False:
+            time.sleep(0.1)
+
+        gui_render_diffusion_steps.remove()
+        return results_images
 
     @staticmethod
     def get_gripper_control_points_o3d(grasp, color=(0.2, 0.8, 0)):

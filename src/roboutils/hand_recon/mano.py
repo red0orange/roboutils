@@ -19,7 +19,7 @@ import json
 import code
 from manopth.manolayer import ManoLayer
 import scipy.sparse
-import metro.modeling.data.config as cfg
+# import metro.modeling.data.config as cfg
 
 class MANO(nn.Module):
     def __init__(self):
@@ -140,7 +140,7 @@ def get_graph_params(filename, nsize=1):
 
 class Mesh(object):
     """Mesh object that is used for handling certain graph operations."""
-    def __init__(self, filename=cfg.MANO_sampling_matrix,
+    def __init__(self, filename,
                  num_downsampling=1, nsize=1, device=torch.device('cuda')):
         self._A, self._U, self._D = get_graph_params(filename=filename, nsize=nsize)
         # self._A = [a.to(device) for a in self._A]
